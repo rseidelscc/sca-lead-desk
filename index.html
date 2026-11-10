@@ -109,6 +109,7 @@ table.acc td.co .sec{color:var(--muted);font-size:12px;display:block;line-height
 .score.conv .bar i.on{background:var(--accent)} .score.fill .bar i.on{background:var(--fg-2)}
 .flag{display:inline-block;font-size:11px;border:1px solid var(--line-2);border-radius:3px;padding:0 5px;line-height:17px;color:var(--fg-2);margin-left:6px;vertical-align:1px}
 table.acc td.co .m-only{display:none;color:var(--muted);font-size:12px}
+.flag.has{border-color:var(--st-customer);color:var(--st-customer);background:color-mix(in srgb,var(--st-customer) 10%,transparent)} .flag.none{color:var(--muted);border-style:dashed}
 .flag.over{border-color:var(--bad);color:var(--bad)} .flag.due{border-color:var(--accent);color:var(--accent)} .flag.aq{border-color:var(--st-negotiate);color:var(--st-negotiate)}
 .more{padding:12px 18px;display:flex;gap:10px;align-items:center;color:var(--muted);border-bottom:1px solid var(--line)}
 .empty{padding:48px 18px;color:var(--muted);text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
@@ -296,6 +297,11 @@ pre.csv{background:var(--surface-2);border:1px solid var(--line);padding:8px;fon
         <option value="unresearched">No contact, not yet researched</option>
         <option value="verified">Site confirmed operating</option>
         <option value="unverified">Site status unverified</option>
+      </select>
+      <select class="sel" id="fContact" aria-label="Contact info">
+        <option value="">Contact info: any</option>
+        <option value="has">Has contact info</option>
+        <option value="none">No contact info</option>
       </select>
       <select class="sel" id="fOwner" aria-label="Owner"><option value="">Any rep</option></select>
       <button class="btn ghost" id="clearF" hidden>Clear filters</button>
@@ -496,7 +502,7 @@ const fillOf=l=>Number.isInteger(l.fillManual)?l.fillManual:(l.fillAuto??0);
 
 // ---------- state ----------
 let leads=[]; let selectedId=null; let view="board"; let tab="overview"; let sort={key:"fit",dir:-1}; let limit=150; let showDead=false;
-const F={region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:""};
+const F={region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:"",contact:""};
 let store=null;
 const uid=()=>"L"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
@@ -708,6 +714,9 @@ function isDueToday(l){ return l.nextStep===todayStr(); }
 function lastCall(l){ return (l.calls||[]).length?l.calls[l.calls.length-1]:null; }
 function repName(o){ return String(o||"").replace(/^rep\s+/i,""); }
 function hasContact(l){ return (l.contacts||[]).some(c=>c&&c.name); }
+function contactInfo(l){ return (l.contacts||[]).some(c=>c&&(c.name||c.email||c.phone)); }
+function contactBadge(l){ const cs=(l.contacts||[]).filter(c=>c&&(c.name||c.email||c.phone)); if(!cs.length) return researchedNone(l)?'<span class="flag none" title="'+esc(l.contactResearch.note||'')+'">no contact found</span>':'<span class="flag none">no contact</span>';
+  const withEmail=cs.filter(c=>c.email).length; const tip=cs.slice(0,4).map(c=>[c.name,c.title,c.email,c.phone].filter(Boolean).join(" · ")).join("\n"); return '<span class="flag has" title="'+esc(tip)+'">'+cs.length+(cs.length===1?" contact":" contacts")+(withEmail?" · "+withEmail+" email":"")+'</span>'; }
 function statusUnverified(l){ return !["vendor","closed"].includes(l.relationship)&&!(l.siteStatus&&l.siteStatus.state==="open")&&!(l.siteStatus&&l.siteStatus.state==="closed"); }
 function researchedNone(l){ return !hasContact(l)&&!!(l.contactResearch&&l.contactResearch.at)&&!["vendor","closed"].includes(l.relationship); }
 function touchDate(l){ const m=/^(\d{4}-\d{2}-\d{2})/.exec(l.lastTouch||""); if(m) return m[1]; const lc=lastCall(l); return lc?lc.at.slice(0,10):""; }
@@ -725,6 +734,8 @@ function matches(l){
   if(F.follow==="today"&&!(isDueToday(l)||isOverdue(l))) return false;
   if(F.follow==="priority"&&!(convOf(l)>=4&&["review","contacted","potential"].includes(l.stage)&&!(l.calls||[]).length)) return false;
   if(F.follow==="activequote"&&!l.activeQuote) return false;
+  if(F.contact==="has"&&!contactInfo(l)) return false;
+  if(F.contact==="none"&&contactInfo(l)) return false;
   if(F.follow==="nocontact"&&hasContact(l)) return false;
   if(F.follow==="researchednone"&&!researchedNone(l)) return false;
   if(F.follow==="unresearched"&&(hasContact(l)||(l.contactResearch&&l.contactResearch.at))) return false;
@@ -747,7 +758,7 @@ const cmp={
   next:(a,b)=>(a.nextStep||"9").localeCompare(b.nextStep||"9")};
 function filtered(){ const rows=leads.filter(matches); const f=cmp[sort.key]||cmp.fit; rows.sort((a,b)=>{ const r=f(a,b); return sort.key==="fit"?r:r*sort.dir; }); return rows; }
 const deadRank=l=>l.relationship==="closed"?2:l.relationship==="vendor"?1:0;
-function anyFilter(){ return !!(F.region||F.state||F.rel||F.score||F.follow||F.owner||F.stage||F.q); }
+function anyFilter(){ return !!(F.region||F.state||F.rel||F.score||F.follow||F.owner||F.stage||F.q||F.contact); }
 
 // ---------- render ----------
 function renderAll(){ renderNav(); renderStats(); renderOwnerOptions(); if(view==="board") renderList(); if(view==="detail") renderDetail(); if(view==="follow") renderFollow(); if(view==="map") renderMap(); if(view==="log") renderLog(); }
@@ -755,11 +766,14 @@ function renderNav(){ $("cntAll").textContent=leads.length.toLocaleString(); $("
 function renderStats(){
   $("stats").innerHTML=STAGES.map(s=>{ const n=leads.filter(l=>l.stage===s.id).length; return `<button class="stat${F.stage===s.id?" active":""}" data-stage="${s.id}" style="--st:var(${s.css})" title="Show ${s.label.toLowerCase()}"><span class="d"></span><span class="n">${n}</span>${s.label}</button>`; }).join("");
   $("stats").querySelectorAll(".stat").forEach(b=>b.onclick=()=>{ F.stage=F.stage===b.dataset.stage?"":b.dataset.stage; renderAll(); });
+  const live=leads.filter(l=>!["vendor","closed"].includes(l.relationship)); const withC=live.filter(contactInfo).length;
+  $("stats").insertAdjacentHTML("beforeend",`<button class="stat${F.contact==="has"?" active":""}" id="statContact" style="--st:var(--st-customer)" title="Show only accounts with contact info"><span class="d"></span><span class="n">${withC}</span>with contact info</button>`);
+  $("statContact").onclick=()=>{ F.contact=F.contact==="has"?"":"has"; $("fContact").value=F.contact; renderAll(); };
 }
 function ownerNames(o){ return String(o||"").split(/[,\/]/).map(s=>s.trim()).filter(Boolean); }
 function renderOwnerOptions(){ const sel=$("fOwner"); const cur=F.owner; const owners=[...new Set(leads.flatMap(l=>ownerNames(l.owner)))].sort(); sel.innerHTML=`<option value="">Any rep</option>`+owners.map(o=>`<option value="${esc(o)}"${o===cur?" selected":""}>${esc(o)}</option>`).join(""); if(cur&&!owners.includes(cur)) F.owner=""; }
 function scoreHtml(kind,v){ return `<span class="score ${kind}" title="${kind.toUpperCase()} ${v}"><span class="bar">${[1,2,3,4,5].map(i=>`<i class="${i<=v?"on":""}"></i>`).join("")}</span>${v}</span>`; }
-function rowFlags(l){ const t=[]; if(l.relationship==="closed") t.push('<span class="flag over">site closed</span>'); if(researchedNone(l)) t.push('<span class="flag" title="'+esc(l.contactResearch.note||'')+'">no contact found</span>'); if(statusUnverified(l)&&convOf(l)>=4) t.push('<span class="flag" title="Operating status not confirmed by research yet">status unverified</span>'); if(isOverdue(l)) t.push('<span class="flag over">overdue</span>'); else if(isDueToday(l)) t.push('<span class="flag due">due today</span>'); if(l.activeQuote) t.push('<span class="flag aq">active quote</span>'); if(l.source==="generated") t.push('<span class="flag">unverified</span>'); return t.join(""); }
+function rowFlags(l){ const t=[]; if(l.relationship==="closed") t.push('<span class="flag over">site closed</span>'); t.push(contactBadge(l)); if(statusUnverified(l)&&convOf(l)>=4) t.push('<span class="flag" title="Operating status not confirmed by research yet">status unverified</span>'); if(isOverdue(l)) t.push('<span class="flag over">overdue</span>'); else if(isDueToday(l)) t.push('<span class="flag due">due today</span>'); if(l.activeQuote) t.push('<span class="flag aq">active quote</span>'); if(l.source==="generated") t.push('<span class="flag">unverified</span>'); return t.join(""); }
 function renderList(){
   const rows=filtered(); const shown=rows.slice(0,limit);
   if(!leads.length&&store&&store.kind==="db"){ $("listCount").textContent="0 accounts"; $("deadToggle").hidden=true; $("list").innerHTML=`<div class="empty"><b>No accounts yet</b><span>${me.canEdit===true?"Use “Import account list” in the left rail to load the seed bundle.":"The account list hasn't been loaded yet — ask Ryan."}</span></div>`; return; }
@@ -1066,12 +1080,13 @@ function openEditModal(l){
 let toastT=null; function toast(m){ $("toastHost").innerHTML=`<div class="toast">${esc(m)}</div>`; clearTimeout(toastT); toastT=setTimeout(()=>$("toastHost").innerHTML="",2200); }
 function showView(v){ view=v; ["tablePanel","detailPanel","followPanel","mapPanel","logPanel"].forEach(id=>$(id).hidden=true); $({board:"tablePanel",detail:"detailPanel",follow:"followPanel",map:"mapPanel",log:"logPanel"}[v]).hidden=false;
   $("vBoard").classList.toggle("active",v==="board"||v==="detail"); $("vFollow").classList.toggle("active",v==="follow"); $("vMap").classList.toggle("active",v==="map"); $("vLog").classList.toggle("active",v==="log"); $("filters").hidden=(v==="follow"||v==="log"); renderAll(); }
-function clearFilters(){ Object.assign(F,{region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:""}); ["fRegion","fRel","fScore","fFollow","fOwner"].forEach(id=>$(id).value=""); $("fSearch").value=""; limit=150; renderAll(); }
+function clearFilters(){ Object.assign(F,{region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:"",contact:""}); ["fRegion","fRel","fScore","fFollow","fOwner","fContact"].forEach(id=>$(id).value=""); $("fSearch").value=""; limit=150; renderAll(); }
 $("openAdd").onclick=()=>openAddModal();
 $("fRegion").onchange=e=>{F.region=e.target.value;F.state="";limit=150;if(view!=="board"&&view!=="map")showView("board");renderAll();};
 $("fRel").onchange=e=>{F.rel=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
 $("fScore").onchange=e=>{F.score=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
 $("fFollow").onchange=e=>{F.follow=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
+$("fContact").onchange=e=>{F.contact=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
 $("fOwner").onchange=e=>{F.owner=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
 $("fSearch").oninput=e=>{F.q=e.target.value;limit=150;if(view!=="board")showView("board");renderNav();renderList();};
 $("clearF").onclick=clearFilters;
