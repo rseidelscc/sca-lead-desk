@@ -63,6 +63,20 @@ a:hover{text-decoration:underline}
 .search kbd{font:inherit;font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:3px;padding:0 5px;line-height:16px}
 .sel{border:1px solid var(--line-2);border-radius:var(--r);background:var(--surface);height:34px;padding:0 8px;max-width:168px;color:var(--fg-2)}
 .sel.on{border-color:var(--fg);color:var(--fg)}
+.msel{position:relative}
+.msel .mselBtn{display:inline-flex;align-items:center;gap:6px;max-width:200px;cursor:pointer;font:inherit;font-size:13px}
+.msel .mselBtn .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.msel .mselBtn .c{font-size:11px;background:var(--surface-3);border-radius:999px;padding:0 6px;line-height:16px;color:var(--fg-2)}
+.msel .mselBtn .v{font-size:10px;color:var(--muted)}
+.msel.on .mselBtn .c{background:var(--fg);color:var(--surface)}
+.mselPop{position:absolute;top:38px;left:0;z-index:30;min-width:230px;max-height:min(60vh,420px);overflow:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:var(--r);box-shadow:0 8px 24px rgba(0,0,0,.14);padding:6px 0}
+.mselPop .mselHead{display:flex;align-items:center;gap:8px;padding:4px 10px 6px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--line);margin-bottom:4px}
+.mselPop .mselHead span{flex:1}
+.mselPop .mselHead button{border:0;background:none;color:var(--fg-2);font-size:11px;cursor:pointer;padding:0 2px;text-decoration:underline}
+.mselPop label{display:flex;align-items:center;gap:8px;padding:5px 10px;font-size:13px;cursor:pointer;white-space:nowrap}
+.mselPop label:hover{background:var(--surface-2)}
+.mselPop label input{margin:0}
+.mselPop .mselEmpty{padding:6px 10px;font-size:12px;color:var(--muted)}
 .btn{border:1px solid var(--line-2);background:var(--surface);border-radius:var(--r);padding:0 11px;height:32px;font-weight:500;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .btn:hover{border-color:var(--fg)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
@@ -259,51 +273,12 @@ pre.csv{background:var(--surface-2);border:1px solid var(--line);padding:8px;fon
   <div class="work">
     <div class="topbar" id="filters">
       <label class="search"><input type="search" id="fSearch" placeholder="Search company, contact, city, sector, rep" aria-label="Search accounts"><kbd>/</kbd></label>
-      <select class="sel" id="fRel" aria-label="Relationship">
-        <option value="">Any relationship</option>
-        <option value="customer">Current customers</option>
-        <option value="past">Past customers</option>
-        <option value="prospect">New prospects</option>
-        <option value="partner">Channel partners</option>
-        <option value="vendor">Vendors / suppliers</option>
-        <option value="closed">Closed or acquired sites</option>
-      </select>
-      <select class="sel" id="fRegion" aria-label="Region">
-        <option value="">Any state</option>
-        <option value="CA">California</option>
-        <option value="OR">Oregon</option>
-        <option value="WA">Washington</option>
-        <option value="WEST">West Coast (WA/OR/CA)</option>
-        <option value="MTN">Mountain West</option>
-        <option value="OTHER">Outside territory</option>
-      </select>
-      <select class="sel" id="fScore" aria-label="Fit">
-        <option value="">Any fit</option>
-        <option value="5">CONV 5</option>
-        <option value="4">CONV 4 and up</option>
-        <option value="3">CONV 3 and up</option>
-        <option value="fill4">FILL 4 and up</option>
-      </select>
-      <select class="sel" id="fFollow" aria-label="Follow-up">
-        <option value="">Any status</option>
-        <option value="today">Due today or overdue</option>
-        <option value="priority">Priority, not yet worked</option>
-        <option value="activequote">Active quote in Monday</option>
-        <option value="notcalled">Never called</option>
-        <option value="called">Called</option>
-        <option value="hascontact">Has a named contact</option>
-        <option value="nocontact">No named contact</option>
-        <option value="researchednone">Researched, no contact found</option>
-        <option value="unresearched">No contact, not yet researched</option>
-        <option value="verified">Site confirmed operating</option>
-        <option value="unverified">Site status unverified</option>
-      </select>
-      <select class="sel" id="fContact" aria-label="Contact info">
-        <option value="">Contact info: any</option>
-        <option value="has">Has contact info</option>
-        <option value="none">No contact info</option>
-      </select>
-      <select class="sel" id="fOwner" aria-label="Owner"><option value="">Any rep</option></select>
+      <div class="msel" id="fRel"></div>
+      <div class="msel" id="fRegion"></div>
+      <div class="msel" id="fScore"></div>
+      <div class="msel" id="fFollow"></div>
+      <div class="msel" id="fContact"></div>
+      <div class="msel" id="fOwner"></div>
       <button class="btn ghost" id="clearF" hidden>Clear filters</button>
     </div>
 
@@ -502,7 +477,35 @@ const fillOf=l=>Number.isInteger(l.fillManual)?l.fillManual:(l.fillAuto??0);
 
 // ---------- state ----------
 let leads=[]; let selectedId=null; let view="board"; let tab="overview"; let sort={key:"fit",dir:-1}; let limit=150; let showDead=false;
-const F={region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:"",contact:""};
+const F={region:[],state:"",rel:[],score:[],follow:[],owner:[],stage:"",q:"",contact:[]};
+// Filter dropdowns: each is a checkbox list. mode "any" = row passes if it matches any ticked option; mode "all" = row must match every ticked option.
+const FILTER_DEFS={
+  rel:{id:"fRel",empty:"Any relationship",mode:"any",opts:[["customer","Current customers"],["past","Past customers"],["prospect","New prospects"],["partner","Channel partners"],["vendor","Vendors / suppliers"],["closed","Closed or acquired sites"]]},
+  region:{id:"fRegion",empty:"Any state",mode:"any",opts:[["CA","California"],["OR","Oregon"],["WA","Washington"],["WEST","West Coast (WA/OR/CA)"],["MTN","Mountain West"],["OTHER","Outside territory"]]},
+  score:{id:"fScore",empty:"Any fit",mode:"any",opts:[["5","CONV 5"],["4","CONV 4 and up"],["3","CONV 3 and up"],["fill4","FILL 4 and up"]]},
+  follow:{id:"fFollow",empty:"Any status",mode:"all",opts:[["today","Due today or overdue"],["priority","Priority, not yet worked"],["activequote","Active quote in Monday"],["notcalled","Never called"],["called","Called"],["hascontact","Has a named contact"],["nocontact","No named contact"],["researchednone","Researched, no contact found"],["unresearched","No contact, not yet researched"],["verified","Site confirmed operating"],["unverified","Site status unverified"]]},
+  contact:{id:"fContact",empty:"Contact info: any",mode:"any",opts:[["has","Has contact info"],["none","No contact info"]]},
+  owner:{id:"fOwner",empty:"Any rep",mode:"any",opts:[]}
+};
+function buildMsel(key){ const d=FILTER_DEFS[key]; const root=$(d.id); root.dataset.key=key; root.setAttribute("aria-label",d.empty);
+  root.innerHTML=`<button type="button" class="sel mselBtn" aria-haspopup="listbox" aria-expanded="false"><span class="t"></span><span class="c" hidden></span><span class="v">▾</span></button><div class="mselPop" role="listbox" aria-multiselectable="true" hidden></div>`;
+  const btn=root.querySelector(".mselBtn"); btn.onclick=e=>{ e.stopPropagation(); const open=root.querySelector(".mselPop").hidden; closeMsels(); if(open) openMsel(key); };
+  mselSync(key); }
+function mselOptions(key){ const d=FILTER_DEFS[key]; return d.opts; }
+function openMsel(key){ const d=FILTER_DEFS[key]; const root=$(d.id); const pop=root.querySelector(".mselPop"); const cur=F[key]; const opts=mselOptions(key);
+  pop.innerHTML=`<div class="mselHead"><span>${d.mode==="all"?"match all ticked":"match any ticked"}</span><button type="button" data-act="all">all</button><button type="button" data-act="none">none</button></div>`+
+    (opts.length?opts.map(([v,l])=>`<label><input type="checkbox" value="${esc(v)}"${cur.includes(v)?" checked":""}> ${esc(l)}</label>`).join(""):`<div class="mselEmpty">Nothing to pick yet</div>`);
+  pop.hidden=false; root.querySelector(".mselBtn").setAttribute("aria-expanded","true");
+  pop.onclick=e=>e.stopPropagation();
+  pop.querySelectorAll("input").forEach(i=>i.onchange=()=>{ const vals=[...pop.querySelectorAll("input:checked")].map(i=>i.value); mselSet(key,vals,true); });
+  pop.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>{ const vals=b.dataset.act==="all"?opts.map(o=>o[0]):[]; pop.querySelectorAll("input").forEach(i=>i.checked=vals.includes(i.value)); mselSet(key,vals,true); }); }
+function closeMsels(){ document.querySelectorAll(".msel").forEach(r=>{ r.querySelector(".mselPop").hidden=true; r.querySelector(".mselBtn").setAttribute("aria-expanded","false"); }); }
+function mselSync(key){ const d=FILTER_DEFS[key]; const root=$(d.id); if(!root||!root.querySelector(".mselBtn")) return; const cur=F[key]; const labels=mselOptions(key).filter(o=>cur.includes(o[0])).map(o=>o[1]);
+  const t=root.querySelector(".t"), c=root.querySelector(".c"); t.textContent=labels.length?labels.join(", "):d.empty; root.querySelector(".mselBtn").title=labels.length?labels.join(" "+(d.mode==="all"?"AND":"OR")+" "):d.empty; c.hidden=labels.length<2; c.textContent=labels.length; root.classList.toggle("on",labels.length>0); }
+// Set a filter from code (also used by the stage/contact chips, the map and tests). keepOpen leaves the popover up so several boxes can be ticked in a row.
+function mselSet(key,vals,keepOpen){ F[key]=[...new Set(vals)]; if(key==="region"&&F.region.length) F.state=""; limit=150; mselSync(key); if(!keepOpen) closeMsels();
+  if(key==="region"){ if(view!=="board"&&view!=="map") showView("board"); } else if(view==="detail") showView("board"); renderAll(); }
+document.addEventListener("click",closeMsels); document.addEventListener("keydown",e=>{ if(e.key==="Escape") closeMsels(); });
 let store=null;
 const uid=()=>"L"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);
 const todayStr=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
@@ -708,7 +711,8 @@ async function persist(l){
 async function removeLead(id){ if(readOnly){ toast("View-only access — nothing deleted"); return; } const gone=leads.find(x=>x.id===id); leads=leads.filter(x=>x.id!==id); if(selectedId===id){ selectedId=null; showView("board"); } renderAll(); await store.remove(id); lastSaved.delete(id); if(gone) recordActivity("delete",gone,[]); }
 
 // ---------- derived ----------
-function regionMatch(l){ const s=l.state||""; switch(F.region){ case "":return true; case "WEST":return WEST.includes(s); case "MTN":return MTN.includes(s); case "OTHER":return !WEST.includes(s)&&!MTN.includes(s); default:return s===F.region; } }
+function regionHit(l,r){ const s=l.state||""; switch(r){ case "WEST":return WEST.includes(s); case "MTN":return MTN.includes(s); case "OTHER":return !WEST.includes(s)&&!MTN.includes(s); default:return s===r; } }
+function regionMatch(l){ return !F.region.length||F.region.some(r=>regionHit(l,r)); }
 function isOverdue(l){ return l.nextStep && l.nextStep<todayStr() && !["customer","discarded"].includes(l.stage); }
 function isDueToday(l){ return l.nextStep===todayStr(); }
 function lastCall(l){ return (l.calls||[]).length?l.calls[l.calls.length-1]:null; }
@@ -720,28 +724,30 @@ function contactBadge(l){ const cs=(l.contacts||[]).filter(c=>c&&(c.name||c.emai
 function statusUnverified(l){ return !["vendor","closed"].includes(l.relationship)&&!(l.siteStatus&&l.siteStatus.state==="open")&&!(l.siteStatus&&l.siteStatus.state==="closed"); }
 function researchedNone(l){ return !hasContact(l)&&!!(l.contactResearch&&l.contactResearch.at)&&!["vendor","closed"].includes(l.relationship); }
 function touchDate(l){ const m=/^(\d{4}-\d{2}-\d{2})/.exec(l.lastTouch||""); if(m) return m[1]; const lc=lastCall(l); return lc?lc.at.slice(0,10):""; }
+const FOLLOW_TEST={
+  notcalled:l=>!(l.calls||[]).length,
+  called:l=>!!(l.calls||[]).length,
+  today:l=>isDueToday(l)||isOverdue(l),
+  priority:l=>convOf(l)>=4&&["review","contacted","potential"].includes(l.stage)&&!(l.calls||[]).length,
+  activequote:l=>!!l.activeQuote,
+  nocontact:l=>!hasContact(l),
+  hascontact:l=>hasContact(l),
+  researchednone:l=>researchedNone(l),
+  unresearched:l=>!(hasContact(l)||(l.contactResearch&&l.contactResearch.at)),
+  unverified:l=>statusUnverified(l),
+  verified:l=>!!(l.siteStatus&&l.siteStatus.state==="open")};
+const SCORE_TEST={"5":l=>convOf(l)>=5,"4":l=>convOf(l)>=4,"3":l=>convOf(l)>=3,fill4:l=>fillOf(l)>=4};
 function matches(l){
   const q=F.q.trim().toLowerCase();
   if(!regionMatch(l)) return false;
   if(F.state&&l.state!==F.state) return false;
-  if(F.rel&&(l.relationship||"prospect")!==F.rel) return false;
-  if(!F.rel&&!showDead&&!q&&["vendor","closed"].includes(l.relationship)) return false;
+  if(F.rel.length&&!F.rel.includes(l.relationship||"prospect")) return false;
+  if(!F.rel.length&&!showDead&&!q&&["vendor","closed"].includes(l.relationship)) return false;
   if(F.stage&&l.stage!==F.stage) return false;
-  if(F.owner&&!ownerNames(l.owner).includes(F.owner)) return false;
-  if(F.score==="5"&&convOf(l)<5) return false; if(F.score==="4"&&convOf(l)<4) return false; if(F.score==="3"&&convOf(l)<3) return false; if(F.score==="fill4"&&fillOf(l)<4) return false;
-  if(F.follow==="notcalled"&&(l.calls||[]).length) return false;
-  if(F.follow==="called"&&!(l.calls||[]).length) return false;
-  if(F.follow==="today"&&!(isDueToday(l)||isOverdue(l))) return false;
-  if(F.follow==="priority"&&!(convOf(l)>=4&&["review","contacted","potential"].includes(l.stage)&&!(l.calls||[]).length)) return false;
-  if(F.follow==="activequote"&&!l.activeQuote) return false;
-  if(F.contact==="has"&&!contactInfo(l)) return false;
-  if(F.contact==="none"&&contactInfo(l)) return false;
-  if(F.follow==="nocontact"&&hasContact(l)) return false;
-  if(F.follow==="researchednone"&&!researchedNone(l)) return false;
-  if(F.follow==="unresearched"&&(hasContact(l)||(l.contactResearch&&l.contactResearch.at))) return false;
-  if(F.follow==="hascontact"&&!hasContact(l)) return false;
-  if(F.follow==="unverified"&&!statusUnverified(l)) return false;
-  if(F.follow==="verified"&&!(l.siteStatus&&l.siteStatus.state==="open")) return false;
+  if(F.owner.length&&!ownerNames(l.owner).some(o=>F.owner.includes(o))) return false;
+  if(F.score.length&&!F.score.some(k=>SCORE_TEST[k]&&SCORE_TEST[k](l))) return false;
+  if(F.contact.length&&!F.contact.some(k=>k==="has"?contactInfo(l):!contactInfo(l))) return false;
+  if(F.follow.length&&!F.follow.every(k=>FOLLOW_TEST[k]&&FOLLOW_TEST[k](l))) return false;
   if(q){ const hay=[l.company,l.city,l.state,l.sector,l.owner,(l.contacts||[]).map(c=>c.name+" "+c.email).join(" ")].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
   return true;
 }
@@ -758,27 +764,27 @@ const cmp={
   next:(a,b)=>(a.nextStep||"9").localeCompare(b.nextStep||"9")};
 function filtered(){ const rows=leads.filter(matches); const f=cmp[sort.key]||cmp.fit; rows.sort((a,b)=>{ const r=f(a,b); return sort.key==="fit"?r:r*sort.dir; }); return rows; }
 const deadRank=l=>l.relationship==="closed"?2:l.relationship==="vendor"?1:0;
-function anyFilter(){ return !!(F.region||F.state||F.rel||F.score||F.follow||F.owner||F.stage||F.q||F.contact); }
+function anyFilter(){ return !!(F.region.length||F.state||F.rel.length||F.score.length||F.follow.length||F.owner.length||F.stage||F.q||F.contact.length); }
 
 // ---------- render ----------
 function renderAll(){ renderNav(); renderStats(); renderOwnerOptions(); if(view==="board") renderList(); if(view==="detail") renderDetail(); if(view==="follow") renderFollow(); if(view==="map") renderMap(); if(view==="log") renderLog(); }
-function renderNav(){ $("cntAll").textContent=leads.length.toLocaleString(); $("cntFollow").textContent=leads.filter(l=>isDueToday(l)||isOverdue(l)).length; $("clearF").hidden=!anyFilter(); ["fRel","fRegion","fScore","fFollow","fOwner"].forEach(id=>$(id).classList.toggle("on",!!$(id).value)); }
+function renderNav(){ $("cntAll").textContent=leads.length.toLocaleString(); $("cntFollow").textContent=leads.filter(l=>isDueToday(l)||isOverdue(l)).length; $("clearF").hidden=!anyFilter(); Object.keys(FILTER_DEFS).forEach(mselSync); }
 function renderStats(){
   $("stats").innerHTML=STAGES.map(s=>{ const n=leads.filter(l=>l.stage===s.id).length; return `<button class="stat${F.stage===s.id?" active":""}" data-stage="${s.id}" style="--st:var(${s.css})" title="Show ${s.label.toLowerCase()}"><span class="d"></span><span class="n">${n}</span>${s.label}</button>`; }).join("");
   $("stats").querySelectorAll(".stat").forEach(b=>b.onclick=()=>{ F.stage=F.stage===b.dataset.stage?"":b.dataset.stage; renderAll(); });
   const live=leads.filter(l=>!["vendor","closed"].includes(l.relationship)); const withC=live.filter(contactInfo).length;
-  $("stats").insertAdjacentHTML("beforeend",`<button class="stat${F.contact==="has"?" active":""}" id="statContact" style="--st:var(--st-customer)" title="Show only accounts with contact info"><span class="d"></span><span class="n">${withC}</span>with contact info</button>`);
-  $("statContact").onclick=()=>{ F.contact=F.contact==="has"?"":"has"; $("fContact").value=F.contact; renderAll(); };
+  $("stats").insertAdjacentHTML("beforeend",`<button class="stat${F.contact.length===1&&F.contact[0]==="has"?" active":""}" id="statContact" style="--st:var(--st-customer)" title="Show only accounts with contact info"><span class="d"></span><span class="n">${withC}</span>with contact info</button>`);
+  $("statContact").onclick=()=>{ mselSet("contact",F.contact.length===1&&F.contact[0]==="has"?[]:["has"]); };
 }
 function ownerNames(o){ return String(o||"").split(/[,\/]/).map(s=>s.trim()).filter(Boolean); }
-function renderOwnerOptions(){ const sel=$("fOwner"); const cur=F.owner; const owners=[...new Set(leads.flatMap(l=>ownerNames(l.owner)))].sort(); sel.innerHTML=`<option value="">Any rep</option>`+owners.map(o=>`<option value="${esc(o)}"${o===cur?" selected":""}>${esc(o)}</option>`).join(""); if(cur&&!owners.includes(cur)) F.owner=""; }
+function renderOwnerOptions(){ const owners=[...new Set(leads.flatMap(l=>ownerNames(l.owner)))].sort(); FILTER_DEFS.owner.opts=owners.map(o=>[o,o]); const keep=F.owner.filter(o=>owners.includes(o)); if(keep.length!==F.owner.length) F.owner=keep; mselSync("owner"); }
 function scoreHtml(kind,v){ return `<span class="score ${kind}" title="${kind.toUpperCase()} ${v}"><span class="bar">${[1,2,3,4,5].map(i=>`<i class="${i<=v?"on":""}"></i>`).join("")}</span>${v}</span>`; }
 function rowFlags(l){ const t=[]; if(l.relationship==="closed") t.push('<span class="flag over">site closed</span>'); t.push(contactBadge(l)); if(statusUnverified(l)&&convOf(l)>=4) t.push('<span class="flag" title="Operating status not confirmed by research yet">status unverified</span>'); if(isOverdue(l)) t.push('<span class="flag over">overdue</span>'); else if(isDueToday(l)) t.push('<span class="flag due">due today</span>'); if(l.activeQuote) t.push('<span class="flag aq">active quote</span>'); if(l.source==="generated") t.push('<span class="flag">unverified</span>'); return t.join(""); }
 function renderList(){
   const rows=filtered(); const shown=rows.slice(0,limit);
   if(!leads.length&&store&&store.kind==="db"){ $("listCount").textContent="0 accounts"; $("deadToggle").hidden=true; $("list").innerHTML=`<div class="empty"><b>No accounts yet</b><span>${me.canEdit===true?"Use “Import account list” in the left rail to load the seed bundle.":"The account list hasn't been loaded yet — ask Ryan."}</span></div>`; return; }
   $("listCount").textContent=rows.length.toLocaleString()+(rows.length===1?" account":" accounts")+(rows.length!==leads.length?" of "+leads.length.toLocaleString():"");
-  const dead=leads.filter(l=>["vendor","closed"].includes(l.relationship)).length; const hiding=!F.rel&&!F.q.trim()&&dead>0; $("deadToggle").hidden=!hiding; if(hiding){ $("showDead").checked=showDead; $("deadTxt").textContent=showDead?"including "+dead+" vendors and closed sites":"show "+dead+" vendors and closed sites too"; }
+  const dead=leads.filter(l=>["vendor","closed"].includes(l.relationship)).length; const hiding=!F.rel.length&&!F.q.trim()&&dead>0; $("deadToggle").hidden=!hiding; if(hiding){ $("showDead").checked=showDead; $("deadTxt").textContent=showDead?"including "+dead+" vendors and closed sites":"show "+dead+" vendors and closed sites too"; }
   $("sortNote").textContent=sort.key==="fit"?"sorted by fit (CONV, then FILL)":"sorted by "+({company:"company",location:"location",rel:"relationship",conv:"CONV",fill:"FILL",stage:"stage",owner:"rep",touch:"last touch",next:"next step"}[sort.key]||sort.key);
   if(!leads.length){ $("list").innerHTML=`<div class="empty"><b>No accounts yet</b><span>Add one, import a CSV, or wait for the account list to load.</span><button class="btn primary" id="emptyAdd">Add accounts</button></div>`; $("emptyAdd").onclick=()=>openAddModal(); return; }
   if(!rows.length){ $("list").innerHTML=`<div class="empty"><b>Nothing matches these filters</b><span>Loosen one, or clear them all.</span><button class="btn" id="emptyClear">Clear filters</button></div>`; $("emptyClear").onclick=clearFilters; return; }
@@ -936,10 +942,10 @@ function renderFollow(){
   $("follow").querySelectorAll("button[data-id]").forEach(b=>b.onclick=()=>openAccount(b.dataset.id));
 }
 function renderMap(){
-  const byState={}; leads.forEach(l=>{ if(regionMatch(l)&&(!F.stage||l.stage===F.stage)&&(!F.rel||(l.relationship||"prospect")===F.rel)){ (byState[l.state]=byState[l.state]||[]).push(l); } });
+  const byState={}; leads.forEach(l=>{ if(regionMatch(l)&&(!F.stage||l.stage===F.stage)&&(!F.rel.length||F.rel.includes(l.relationship||"prospect"))){ (byState[l.state]=byState[l.state]||[]).push(l); } });
   $("tiles").innerHTML=TILES.map(([ab,c,r])=>{ const ls=byState[ab]||[]; const terr=WEST.includes(ab);
     return `<button class="tile${terr?" terr":""}${ls.length?" has":""}${F.state===ab?" active":""}" style="grid-column:${c+1};grid-row:${r+1}" data-st="${ab}" title="${ab}: ${ls.length} account${ls.length===1?"":"s"}"><span>${ab}</span>${ls.length?`<span class="n">${ls.length}</span>`:""}</button>`; }).join("");
-  $("tiles").querySelectorAll(".tile").forEach(t=>t.onclick=()=>{ F.state=F.state===t.dataset.st?"":t.dataset.st; if(F.state){ F.region=""; $("fRegion").value=""; } showView("board"); renderAll(); });
+  $("tiles").querySelectorAll(".tile").forEach(t=>t.onclick=()=>{ F.state=F.state===t.dataset.st?"":t.dataset.st; if(F.state){ F.region=[]; mselSync("region"); } showView("board"); renderAll(); });
   $("mapClear").hidden=!F.state;
   $("legend").innerHTML=`<span><span class="sw"></span> SCA territory (WA / OR / CA)</span><span>Counts respect the relationship and stage filters.</span>`;
 }
@@ -1080,14 +1086,9 @@ function openEditModal(l){
 let toastT=null; function toast(m){ $("toastHost").innerHTML=`<div class="toast">${esc(m)}</div>`; clearTimeout(toastT); toastT=setTimeout(()=>$("toastHost").innerHTML="",2200); }
 function showView(v){ view=v; ["tablePanel","detailPanel","followPanel","mapPanel","logPanel"].forEach(id=>$(id).hidden=true); $({board:"tablePanel",detail:"detailPanel",follow:"followPanel",map:"mapPanel",log:"logPanel"}[v]).hidden=false;
   $("vBoard").classList.toggle("active",v==="board"||v==="detail"); $("vFollow").classList.toggle("active",v==="follow"); $("vMap").classList.toggle("active",v==="map"); $("vLog").classList.toggle("active",v==="log"); $("filters").hidden=(v==="follow"||v==="log"); renderAll(); }
-function clearFilters(){ Object.assign(F,{region:"",state:"",rel:"",score:"",follow:"",owner:"",stage:"",q:"",contact:""}); ["fRegion","fRel","fScore","fFollow","fOwner","fContact"].forEach(id=>$(id).value=""); $("fSearch").value=""; limit=150; renderAll(); }
+function clearFilters(){ Object.assign(F,{region:[],state:"",rel:[],score:[],follow:[],owner:[],stage:"",q:"",contact:[]}); Object.keys(FILTER_DEFS).forEach(mselSync); closeMsels(); $("fSearch").value=""; limit=150; renderAll(); }
 $("openAdd").onclick=()=>openAddModal();
-$("fRegion").onchange=e=>{F.region=e.target.value;F.state="";limit=150;if(view!=="board"&&view!=="map")showView("board");renderAll();};
-$("fRel").onchange=e=>{F.rel=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
-$("fScore").onchange=e=>{F.score=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
-$("fFollow").onchange=e=>{F.follow=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
-$("fContact").onchange=e=>{F.contact=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
-$("fOwner").onchange=e=>{F.owner=e.target.value;limit=150;if(view==="detail")showView("board");renderAll();};
+Object.keys(FILTER_DEFS).forEach(buildMsel);
 $("fSearch").oninput=e=>{F.q=e.target.value;limit=150;if(view!=="board")showView("board");renderNav();renderList();};
 $("clearF").onclick=clearFilters;
 $("showDead").onchange=e=>{ showDead=e.target.checked; limit=150; renderList(); };
@@ -1101,6 +1102,7 @@ initIdentity().then(initStore);
 window.__scaImport=importSeedBundle;
 window.__scaScore=scoreLead;
 window.__scaDiff=diffLead;
+window.mselSet=mselSet;
 window.__scaState=()=>({leads,F,selectedId,view,tab,log,me:{id:me.id,level:me.level,canWrite:me.canWrite,canEdit:me.canEdit},readOnly});
 })();
 </script>
