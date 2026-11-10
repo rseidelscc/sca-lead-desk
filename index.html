@@ -526,7 +526,7 @@ function clip(v){ v=v===null||v===undefined?"":String(v); return v.length>160?v.
 function stageLabel(v){ return (STAGE_BY[v]||{}).label||v||""; }
 function diffLead(before,after){
   const ch=[]; before=before||{}; after=after||{};
-  for(const f of DIFF_FIELDS){ const a=before[f], b=after[f]; const na=a===undefined||a===null||a===""; const nb=b===undefined||b===null||b===""; if(na&&nb) continue; if(JSON.stringify(a)===JSON.stringify(b)) continue; const fmt=f==="stage"?stageLabel:(f==="convManual"||f==="fillManual")?(x=>x===null||x===undefined?"auto":"set "+x):clip; ch.push({f:LABELS[f],from:fmt(a),to:fmt(b)}); }
+  for(const f of DIFF_FIELDS){ const a=before[f], b=after[f]; const na=a===undefined||a===null||a===""; const nb=b===undefined||b===null||b===""; if(na&&nb) continue; if(JSON.stringify(a)===JSON.stringify(b)) continue; const fmt=f==="stage"?stageLabel:f==="relationship"?(x=>REL_LABEL[x]||clip(x)):(f==="convManual"||f==="fillManual")?(x=>x===null||x===undefined?"auto":"set "+x):clip; ch.push({f:LABELS[f],from:fmt(a),to:fmt(b)}); }
   const nb=noteEntries(before).map(n=>n.at+" — "+n.text), na=noteEntries(after).map(n=>n.at+" — "+n.text);
   for(const n of na) if(!nb.includes(n)) ch.push({f:"Note added",to:clip(n)});
   for(const n of nb) if(!na.includes(n)) ch.push({f:"Note deleted",from:clip(n)});
@@ -626,10 +626,11 @@ async function importSeedBundle(obj){
   seedBundle=obj; seedChecked=false; await seedIfNeeded(store.db,store.db.collection("leads"));
   const meta=await metaGet(store.db,"meta/seed"); toast(meta?("Account list at version "+meta.version+" · "+leads.length+" accounts"):"Import finished");
 }
-function userTouched(l){ return !!((l.calls||[]).length||String(l.userNotes||"").trim()||String(l.notes||"").trim()||(l.stage&&l.stage!=="review")||String(l.nextStep||"").trim()); }
+function userTouched(l){ return !!(l.relLocked||(l.calls||[]).length||String(l.userNotes||"").trim()||String(l.notes||"").trim()||(l.stage&&l.stage!=="review")||String(l.nextStep||"").trim()); }
 async function metaGet(db,path){ try{ const m=await db.doc(path).get(); const md=m&&(typeof m.data==="function"?m.data():m.data); return (m&&m.exists&&md)?md:null; }catch(e){ return null; } }
 async function rememberDeleted(id){ try{ if(!store||store.kind!=="db"||!store.db) return; const cur=(await metaGet(store.db,"meta/deleted"))||{ids:[]}; const ids=Array.isArray(cur.ids)?cur.ids:[]; if(!ids.includes(id)){ ids.push(id); await store.db.doc("meta/deleted").set({ids}); } }catch(e){} }
 function mergeSeed(existing,rec){ const o=JSON.parse(JSON.stringify(existing)); for(const k of SYSTEM_FIELDS){ if(rec[k]!==undefined) o[k]=rec[k]; }
+  if(existing.relLocked){ o.relationship=existing.relationship; o.relLocked=true; }
   const have=new Set((o.contacts||[]).map(c=>((c.email||c.name||"")+"").toLowerCase())); for(const c of (rec.contacts||[])){ const k=((c.email||c.name||"")+"").toLowerCase(); if(k&&!have.has(k)){ (o.contacts=o.contacts||[]).push(c); have.add(k); } }
   if(!Number.isInteger(o.convManual)&&Number.isInteger(rec.convManual)) o.convManual=rec.convManual; if(!Number.isInteger(o.fillManual)&&Number.isInteger(rec.fillManual)) o.fillManual=rec.fillManual;
   return o; }
@@ -861,6 +862,7 @@ function renderDetail(){
     <div id="tabbody">${body}</div></div>
     <aside class="side">
       <div class="card"><h3>Stage</h3><div class="stageopt">${STAGES.map(s=>`<button class="${s.id===l.stage?"active":""}" data-stage="${s.id}" style="--st:var(${s.css})"><span class="d"></span>${s.label}</button>`).join("")}</div></div>
+      <div class="card"><h3>Relationship</h3><select class="sideinput" id="sideRel">${Object.entries(REL_LABEL).map(([k,v])=>`<option value="${k}"${k===rel?" selected":""}>${esc(v)}</option>`).join("")}</select>${l.relLocked?'<div class="muted small" style="margin-top:6px">Set by hand — data refreshes won\'t change it.</div>':'<div class="muted small" style="margin-top:6px">From SCA\'s records. Change it here if it\'s wrong.</div>'}</div>
       <div class="card"><h3>Next step</h3><div class="field"><label>Follow up on</label><input type="date" class="sideinput" id="sideNext" value="${esc(l.nextStep||"")}"></div><div class="field"><label>SCA rep</label><input class="sideinput" id="sideOwner" value="${esc(repName(l.owner))}" placeholder="Initials"></div>
         <div class="kv"><dt>Calls</dt><dd>${calls.length}${lastCall(l)?` · last ${fmtTs(lastCall(l).at)}`:""}</dd><dt>Notes</dt><dd>${notes.length}</dd></div></div>
       <div class="card"><h3>Reach them</h3><dl class="kv"><dt>Phone</dt><dd>${l.phone?`<a href="tel:${esc(tel)}">${esc(l.phone)}</a>`:'<span class="muted">—</span>'}</dd><dt>Web</dt><dd>${l.website?`<a href="${esc(withProto(l.website))}" target="_blank" rel="noopener">${esc(l.website.replace(/^https?:\/\//,""))}</a>`:'<span class="muted">—</span>'}</dd><dt>Contact</dt><dd>${contacts.length?esc(contacts[0].name)+(contacts[0].title?`<br><span class="muted">${esc(contacts[0].title)}</span>`:""):(researchedNone(l)?'<span class="flag over" style="margin:0">no contact found</span>':'<span class="muted">none named — not researched yet</span>')}</dd></dl></div>
@@ -874,6 +876,7 @@ function renderDetail(){
   $("ovFill").onchange=e=>{ l.fillManual=e.target.value===""?null:Number(e.target.value); persist(l); };
   $("sideNext").onchange=e=>{ l.nextStep=e.target.value; persist(l); };
   $("sideOwner").onchange=e=>{ l.owner=e.target.value.trim(); persist(l); };
+  $("sideRel").onchange=e=>{ l.relationship=e.target.value; l.relLocked=true; applyScore(l); persist(l); toast("Relationship set to "+(REL_LABEL[l.relationship]||l.relationship)); };
   const sg=$("signals"); if(sg) sg.onchange=e=>{ l.signals=e.target.value; applyScore(l); persist(l); };
   const el=$("editLead"); if(el) el.onclick=()=>openEditModal(l);
   const th=$("toHistory"); if(th) th.onclick=()=>{ tab="history"; renderDetail(); };
