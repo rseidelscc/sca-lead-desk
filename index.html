@@ -124,7 +124,7 @@ table.acc td.co .sec{color:var(--muted);font-size:12px;display:block;line-height
 .flag{display:inline-block;font-size:11px;border:1px solid var(--line-2);border-radius:3px;padding:0 5px;line-height:17px;color:var(--fg-2);margin-left:6px;vertical-align:1px}
 table.acc td.co .m-only{display:none;color:var(--muted);font-size:12px}
 .flag.has{border-color:var(--st-customer);color:var(--st-customer);background:color-mix(in srgb,var(--st-customer) 10%,transparent)} .flag.none{color:var(--muted);border-style:dashed}
-.flag.over{border-color:var(--bad);color:var(--bad)} .flag.due{border-color:var(--accent);color:var(--accent)} .flag.aq{border-color:var(--st-negotiate);color:var(--st-negotiate)}
+.flag.audit{border-color:var(--accent);background:var(--accent);color:var(--accent-ink);font-weight:600} .flag.over{border-color:var(--bad);color:var(--bad)} .flag.due{border-color:var(--accent);color:var(--accent)} .flag.aq{border-color:var(--st-negotiate);color:var(--st-negotiate)}
 .more{padding:12px 18px;display:flex;gap:10px;align-items:center;color:var(--muted);border-bottom:1px solid var(--line)}
 .empty{padding:48px 18px;color:var(--muted);text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
 .empty b{color:var(--fg);font-size:15px}
@@ -373,6 +373,8 @@ pre.csv{background:var(--surface-2);border:1px solid var(--line);padding:8px;fon
     if(me.role==="owner"||me.role==="admin"){
       const lab=document.createElement("label"); lab.className="btn ghost sm"; lab.style.cssText="cursor:pointer;justify-content:center"; lab.innerHTML='Import account list<input type="file" id="seedFile" accept=".json,application/json" hidden>';
       foot.appendChild(lab);
+      const pid=(window.SCA_FIREBASE&&window.SCA_FIREBASE.projectId)||""; if(pid){ const mu=document.createElement("div"); mu.className="status"; mu.id="manageUsers"; mu.style.cssText="flex-direction:column;align-items:flex-start;gap:2px";
+        mu.innerHTML='<a href="https://console.firebase.google.com/project/'+pid+'/authentication/users" target="_blank" rel="noopener" style="text-decoration:underline">Manage users (logins)</a><a href="https://console.firebase.google.com/project/'+pid+'/firestore/data/~2Fusers" target="_blank" rel="noopener" style="text-decoration:underline">User roles</a>'; foot.appendChild(mu); }
       lab.querySelector("input").onchange=async ev=>{ const f=ev.target.files&&ev.target.files[0]; if(!f) return; try{ const obj=JSON.parse(await f.text()); if(window.__scaImport) await window.__scaImport(obj); }catch(e){ alert("That file isn't a Lead Desk seed bundle: "+(e&&e.message||e)); } ev.target.value=""; };
     }
   }
@@ -483,7 +485,7 @@ const FILTER_DEFS={
   rel:{id:"fRel",empty:"Any relationship",mode:"any",opts:[["customer","Current customers"],["past","Past customers"],["prospect","New prospects"],["partner","Channel partners"],["vendor","Vendors / suppliers"],["closed","Closed or acquired sites"]]},
   region:{id:"fRegion",empty:"Any state",mode:"any",opts:[["CA","California"],["OR","Oregon"],["WA","Washington"],["WEST","West Coast (WA/OR/CA)"],["MTN","Mountain West"],["OTHER","Outside territory"]]},
   score:{id:"fScore",empty:"Any fit",mode:"any",opts:[["5","CONV 5"],["4","CONV 4 and up"],["3","CONV 3 and up"],["fill4","FILL 4 and up"]]},
-  follow:{id:"fFollow",empty:"Any status",mode:"all",opts:[["today","Due today or overdue"],["priority","Priority, not yet worked"],["activequote","Active quote in Monday"],["notcalled","Never called"],["called","Called"],["hascontact","Has a named contact"],["nocontact","No named contact"],["researchednone","Researched, no contact found"],["unresearched","No contact, not yet researched"],["verified","Site confirmed operating"],["unverified","Site status unverified"]]},
+  follow:{id:"fFollow",empty:"Any status",mode:"all",opts:[["audit","Flagged for audit"],["today","Due today or overdue"],["priority","Priority, not yet worked"],["activequote","Active quote in Monday"],["notcalled","Never called"],["called","Called"],["hascontact","Has a named contact"],["nocontact","No named contact"],["researchednone","Researched, no contact found"],["unresearched","No contact, not yet researched"],["verified","Site confirmed operating"],["unverified","Site status unverified"]]},
   contact:{id:"fContact",empty:"Contact info: any",mode:"any",opts:[["has","Has contact info"],["none","No contact info"]]},
   owner:{id:"fOwner",empty:"Any rep",mode:"any",opts:[]}
 };
@@ -530,13 +532,13 @@ let me={id:null,name:"",level:null,canWrite:null,canEdit:null,user:null}; let re
 let log=[]; let logLoaded=false; const names=new Map(); let logUnsubs=[]; let logUsersKnown=new Set(); let logQ="", logWho="";
 const LOG_LS="sca-lead-desk-log";
 const SITE_LABEL={unknown:"Unverified",open:"Confirmed operating",closed:"Closed / relocated"};
-const LABELS={siteStatus:"Site status",stage:"Stage",convManual:"CONV override",fillManual:"FILL override",nextStep:"Next step",owner:"SCA rep",signals:"Why it matters",company:"Company",sector:"What they make",city:"City",state:"State",address:"Address",phone:"Phone",website:"Website",dealSize:"Est. deal",relationship:"Relationship",notes:"Notes",source:"Source"};
+const LABELS={siteStatus:"Site status",stage:"Stage",convManual:"CONV override",fillManual:"FILL override",nextStep:"Next step",owner:"SCA rep",signals:"Why it matters",company:"Company",sector:"What they make",city:"City",state:"State",address:"Address",phone:"Phone",website:"Website",dealSize:"Est. deal",relationship:"Relationship",notes:"Notes",source:"Source",auditFlag:"Audit flag"};
 const DIFF_FIELDS=Object.keys(LABELS);
 function clip(v){ v=v===null||v===undefined?"":String(v); return v.length>160?v.slice(0,157)+"…":v; }
 function stageLabel(v){ return (STAGE_BY[v]||{}).label||v||""; }
 function diffLead(before,after){
   const ch=[]; before=before||{}; after=after||{};
-  for(const f of DIFF_FIELDS){ const a=before[f], b=after[f]; const na=a===undefined||a===null||a===""; const nb=b===undefined||b===null||b===""; if(na&&nb) continue; if(JSON.stringify(a)===JSON.stringify(b)) continue; const fmt=f==="stage"?stageLabel:f==="relationship"?(x=>REL_LABEL[x]||clip(x)):f==="siteStatus"?(x=>x&&x.state?(SITE_LABEL[x.state]||x.state):"Unverified"):(f==="convManual"||f==="fillManual")?(x=>x===null||x===undefined?"auto":"set "+x):clip; ch.push({f:LABELS[f],from:fmt(a),to:fmt(b)}); }
+  for(const f of DIFF_FIELDS){ const a=before[f], b=after[f]; const na=a===undefined||a===null||a===""; const nb=b===undefined||b===null||b===""; if(na&&nb) continue; if(JSON.stringify(a)===JSON.stringify(b)) continue; const fmt=f==="stage"?stageLabel:f==="relationship"?(x=>REL_LABEL[x]||clip(x)):f==="siteStatus"?(x=>x&&x.state?(SITE_LABEL[x.state]||x.state):"Unverified"):(f==="convManual"||f==="fillManual")?(x=>x===null||x===undefined?"auto":"set "+x):f==="auditFlag"?(x=>x&&x.on?"Flagged for audit":(x&&x.sentAt?"Cleared — audit outreach sent":"Not flagged")):clip; ch.push({f:LABELS[f],from:fmt(a),to:fmt(b)}); }
   const nb=noteEntries(before).map(n=>n.at+" — "+n.text), na=noteEntries(after).map(n=>n.at+" — "+n.text);
   for(const n of na) if(!nb.includes(n)) ch.push({f:"Note added",to:clip(n)});
   for(const n of nb) if(!na.includes(n)) ch.push({f:"Note deleted",from:clip(n)});
@@ -636,7 +638,7 @@ async function importSeedBundle(obj){
   seedBundle=obj; seedChecked=false; await seedIfNeeded(store.db,store.db.collection("leads"));
   const meta=await metaGet(store.db,"meta/seed"); toast(meta?("Account list at version "+meta.version+" · "+leads.length+" accounts"):"Import finished");
 }
-function userTouched(l){ return !!(l.relLocked||l.siteLocked||(l.calls||[]).length||String(l.userNotes||"").trim()||String(l.notes||"").trim()||(l.stage&&l.stage!=="review")||String(l.nextStep||"").trim()); }
+function userTouched(l){ return !!(l.auditFlag||l.relLocked||l.siteLocked||(l.calls||[]).length||String(l.userNotes||"").trim()||String(l.notes||"").trim()||(l.stage&&l.stage!=="review")||String(l.nextStep||"").trim()); }
 async function metaGet(db,path){ try{ const m=await db.doc(path).get(); const md=m&&(typeof m.data==="function"?m.data():m.data); return (m&&m.exists&&md)?md:null; }catch(e){ return null; } }
 async function rememberDeleted(id){ try{ if(!store||store.kind!=="db"||!store.db) return; const cur=(await metaGet(store.db,"meta/deleted"))||{ids:[]}; const ids=Array.isArray(cur.ids)?cur.ids:[]; if(!ids.includes(id)){ ids.push(id); await store.db.doc("meta/deleted").set({ids}); } }catch(e){} }
 function mergeSeed(existing,rec){ const o=JSON.parse(JSON.stringify(existing)); for(const k of SYSTEM_FIELDS){ if(rec[k]!==undefined) o[k]=rec[k]; }
@@ -725,6 +727,7 @@ function statusUnverified(l){ return !["vendor","closed"].includes(l.relationshi
 function researchedNone(l){ return !hasContact(l)&&!!(l.contactResearch&&l.contactResearch.at)&&!["vendor","closed"].includes(l.relationship); }
 function touchDate(l){ const m=/^(\d{4}-\d{2}-\d{2})/.exec(l.lastTouch||""); if(m) return m[1]; const lc=lastCall(l); return lc?lc.at.slice(0,10):""; }
 const FOLLOW_TEST={
+  audit:l=>!!(l.auditFlag&&l.auditFlag.on),
   notcalled:l=>!(l.calls||[]).length,
   called:l=>!!(l.calls||[]).length,
   today:l=>isDueToday(l)||isOverdue(l),
@@ -775,11 +778,15 @@ function renderStats(){
   const live=leads.filter(l=>!["vendor","closed"].includes(l.relationship)); const withC=live.filter(contactInfo).length;
   $("stats").insertAdjacentHTML("beforeend",`<button class="stat${F.contact.length===1&&F.contact[0]==="has"?" active":""}" id="statContact" style="--st:var(--st-customer)" title="Show only accounts with contact info"><span class="d"></span><span class="n">${withC}</span>with contact info</button>`);
   $("statContact").onclick=()=>{ mselSet("contact",F.contact.length===1&&F.contact[0]==="has"?[]:["has"]); };
+  const nAudit=leads.filter(l=>l.auditFlag&&l.auditFlag.on).length; const auditActive=F.follow.includes("audit");
+  $("stats").insertAdjacentHTML("beforeend",`<button class="stat${auditActive?" active":""}" id="statAudit" style="--st:var(--accent)" title="Show only accounts flagged for an audit"><span class="d"></span><span class="n">${nAudit}</span>flagged for audit</button>`);
+  $("statAudit").onclick=()=>{ mselSet("follow",auditActive?F.follow.filter(k=>k!=="audit"):[...F.follow,"audit"]); };
 }
 function ownerNames(o){ return String(o||"").split(/[,\/]/).map(s=>s.trim()).filter(Boolean); }
 function renderOwnerOptions(){ const owners=[...new Set(leads.flatMap(l=>ownerNames(l.owner)))].sort(); FILTER_DEFS.owner.opts=owners.map(o=>[o,o]); const keep=F.owner.filter(o=>owners.includes(o)); if(keep.length!==F.owner.length) F.owner=keep; mselSync("owner"); }
 function scoreHtml(kind,v){ return `<span class="score ${kind}" title="${kind.toUpperCase()} ${v}"><span class="bar">${[1,2,3,4,5].map(i=>`<i class="${i<=v?"on":""}"></i>`).join("")}</span>${v}</span>`; }
-function rowFlags(l){ const t=[]; if(l.relationship==="closed") t.push('<span class="flag over">site closed</span>'); t.push(contactBadge(l)); if(statusUnverified(l)&&convOf(l)>=4) t.push('<span class="flag" title="Operating status not confirmed by research yet">status unverified</span>'); if(isOverdue(l)) t.push('<span class="flag over">overdue</span>'); else if(isDueToday(l)) t.push('<span class="flag due">due today</span>'); if(l.activeQuote) t.push('<span class="flag aq">active quote</span>'); if(l.source==="generated") t.push('<span class="flag">unverified</span>'); return t.join(""); }
+function auditOn(l){ return !!(l.auditFlag&&l.auditFlag.on); }
+function rowFlags(l){ const t=[]; if(auditOn(l)) t.push('<span class="flag audit" title="'+esc("Flagged as a good audit opportunity"+(l.auditFlag.by?" by "+l.auditFlag.by:"")+(l.auditFlag.at?" on "+l.auditFlag.at:""))+'">audit opportunity</span>'); if(l.relationship==="closed") t.push('<span class="flag over">site closed</span>'); t.push(contactBadge(l)); if(statusUnverified(l)&&convOf(l)>=4) t.push('<span class="flag" title="Operating status not confirmed by research yet">status unverified</span>'); if(isOverdue(l)) t.push('<span class="flag over">overdue</span>'); else if(isDueToday(l)) t.push('<span class="flag due">due today</span>'); if(l.activeQuote) t.push('<span class="flag aq">active quote</span>'); if(l.source==="generated") t.push('<span class="flag">unverified</span>'); return t.join(""); }
 function renderList(){
   const rows=filtered(); const shown=rows.slice(0,limit);
   if(!leads.length&&store&&store.kind==="db"){ $("listCount").textContent="0 accounts"; $("deadToggle").hidden=true; $("list").innerHTML=`<div class="empty"><b>No accounts yet</b><span>${me.canEdit===true?"Use “Import account list” in the left rail to load the seed bundle.":"The account list hasn't been loaded yet — ask Ryan."}</span></div>`; return; }
@@ -883,6 +890,9 @@ function renderDetail(){
     <div class="tabs" id="atabs">${tabBtn("overview","Overview")}${tabBtn("notes","Notes",notes.length)}${tabBtn("calls","Calls",calls.length)}${tabBtn("contacts","Contacts",contacts.length)}${tabBtn("history","History",blocks.length)}</div>
     <div id="tabbody">${body}</div></div>
     <aside class="side">
+      <div class="card" id="auditCard"${auditOn(l)?' style="border-color:var(--accent)"':''}><h3>Audit</h3>
+        <label style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" id="auditChk"${auditOn(l)?" checked":""} style="margin-top:3px"><span>Good opportunity for an audit</span></label>
+        ${auditOn(l)?`<div class="muted small" style="margin-top:6px">Flagged${l.auditFlag.by?" by "+esc(l.auditFlag.by):""}${l.auditFlag.at?" on "+esc(l.auditFlag.at):""}.</div><button class="btn sm" id="auditSent" style="margin-top:8px;width:100%;justify-content:center">Audit outreach sent — clear flag</button>`:(l.auditFlag&&l.auditFlag.sentAt?`<div class="muted small" style="margin-top:6px">Audit outreach sent ${esc(l.auditFlag.sentAt)}${l.auditFlag.sentBy?" by "+esc(l.auditFlag.sentBy):""}.</div>`:'<div class="muted small" style="margin-top:6px">Check this to put the account on the audit list.</div>')}</div>
       <div class="card"><h3>Stage</h3><div class="stageopt">${STAGES.map(s=>`<button class="${s.id===l.stage?"active":""}" data-stage="${s.id}" style="--st:var(${s.css})"><span class="d"></span>${s.label}</button>`).join("")}</div></div>
       <div class="card"><h3>Relationship</h3><select class="sideinput" id="sideRel">${Object.entries(REL_LABEL).map(([k,v])=>`<option value="${k}"${k===rel?" selected":""}>${esc(v)}</option>`).join("")}</select>${l.relLocked?'<div class="muted small" style="margin-top:6px">Set by hand — data refreshes won\'t change it.</div>':'<div class="muted small" style="margin-top:6px">From SCA\'s records. Change it here if it\'s wrong.</div>'}
         <div class="field" style="margin-top:10px"><label>Site status</label><select class="sideinput" id="sideSite">${[["unknown","Unverified"],["open","Confirmed operating"],["closed","Closed / relocated"]].map(([k,v])=>`<option value="${k}"${(l.siteStatus&&l.siteStatus.state)===k||(!l.siteStatus&&k==="unknown")?" selected":""}>${v}</option>`).join("")}</select></div>
@@ -899,6 +909,9 @@ function renderDetail(){
   $("ovConv").onchange=e=>{ l.convManual=e.target.value===""?null:Number(e.target.value); persist(l); };
   $("ovFill").onchange=e=>{ l.fillManual=e.target.value===""?null:Number(e.target.value); persist(l); };
   $("sideNext").onchange=e=>{ l.nextStep=e.target.value; persist(l); };
+  const whoAmI=()=>names.get(me.id)||me.name||"desk user";
+  if($("auditChk")) $("auditChk").onchange=e=>{ if(e.target.checked){ l.auditFlag={on:true,by:whoAmI(),at:todayStr()}; toast("Flagged for audit"); } else { l.auditFlag={on:false}; toast("Audit flag removed"); } persist(l); };
+  if($("auditSent")) $("auditSent").onclick=()=>{ const who=whoAmI(); l.auditFlag={on:false,sentAt:todayStr(),sentBy:who}; l.userNotes=((l.userNotes||"").trim()?(l.userNotes.trim()+"\n"):"")+nowStamp()+" — Audit outreach sent ("+who+"). Audit flag cleared."; persist(l); toast("Marked sent — flag cleared"); };
   $("sideOwner").onchange=e=>{ l.owner=e.target.value.trim(); persist(l); };
   $("sideRel").onchange=e=>{ l.relationship=e.target.value; l.relLocked=true; applyScore(l); persist(l); toast("Relationship set to "+(REL_LABEL[l.relationship]||l.relationship)); };
   $("sideSite").onchange=e=>{ const st=e.target.value; l.siteStatus={state:st,at:todayStr(),note:"set by hand",source:(names.get(me.id)||"desk user")}; l.siteLocked=true;
